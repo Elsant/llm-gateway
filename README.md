@@ -41,7 +41,8 @@ go run ./cmd/gateway
 ## Project layout
 
 ```
-cmd/gateway/   entrypoint
+cmd/gateway/         entrypoint
+internal/anthropic/   Messages API wire types
 ```
 
 ## License

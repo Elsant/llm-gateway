@@ -1,32 +1,26 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-
-	"github.com/elsant/llm-gateway/internal/anthropic"
 )
 
 func main() {
-	temperature := 0.0
-
-	req := anthropic.MessageRequest{
-		Model:     "claude-opus-5-5",
-		MaxTokens: 1024,
-		Messages: []anthropic.Message{
-			{
-				Role:    anthropic.RoleUser,
-				Content: []anthropic.ContentBlock{anthropic.NewTextBlock("Hello, Claude")},
-			},
-		},
-		System:      "You are a helpful assistant.",
-		Temperature: &temperature,
-	}
-
-	out, err := json.MarshalIndent(req, "", "  ")
+	body, err := buildRequest("Hello, Claude")
 	if err != nil {
-		log.Fatalf("marshal request: %v", err)
+		log.Fatalf("build request: %v", err)
 	}
-	fmt.Println(string(out))
+	fmt.Println(string(body))
+
+	// Reuse err with "=" instead of declaring a new one inside the if:
+	// `if _, err := ...` would shadow the outer err.
+	_, err = buildRequest("   ")
+	if errors.Is(err, errEmptyPrompt) {
+		fmt.Println("empty prompt rejected:", err)
+	} else if err != nil {
+		log.Fatalf("build request: %v", err)
+	} else {
+		log.Fatal("expected an error for an empty prompt, got nil")
+	}
 }

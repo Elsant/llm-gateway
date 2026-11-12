@@ -24,14 +24,10 @@ const (
 // prompt. It is a package-level value so callers can check it with errors.Is.
 var errEmptyPrompt = errors.New("prompt is empty")
 
-// buildRequest returns the JSON body of POST /v1/messages with a single user
-// message containing prompt.
-func buildRequest(prompt string) ([]byte, error) {
-	if strings.TrimSpace(prompt) == "" {
-		return nil, errEmptyPrompt
-	}
-
-	req := anthropic.MessageRequest{
+// newMessageRequest returns a request with a single user message containing
+// prompt and the default model and max_tokens.
+func newMessageRequest(prompt string) anthropic.MessageRequest {
+	return anthropic.MessageRequest{
 		Model:     defaultModel,
 		MaxTokens: defaultMaxTokens,
 		Messages: []anthropic.Message{
@@ -41,10 +37,22 @@ func buildRequest(prompt string) ([]byte, error) {
 			},
 		},
 	}
+}
 
+// encodeRequest serializes req into the JSON body of POST /v1/messages.
+func encodeRequest(req anthropic.MessageRequest) ([]byte, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	return body, nil
+}
+
+// buildRequest returns the JSON body of POST /v1/messages with a single user
+// message containing prompt.
+func buildRequest(prompt string) ([]byte, error) {
+	if strings.TrimSpace(prompt) == "" {
+		return nil, errEmptyPrompt
+	}
+	return encodeRequest(newMessageRequest(prompt))
 }

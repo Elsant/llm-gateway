@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"time"
 )
 
 func main() {
@@ -22,5 +25,19 @@ func main() {
 		log.Fatalf("build request: %v", err)
 	} else {
 		log.Fatal("expected an error for an empty prompt, got nil")
+	}
+
+	client := NewClient(os.Getenv("ANTHROPIC_API_KEY"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := client.Send(ctx, newMessageRequest("Hello, Claude"))
+	if errors.Is(err, errNotImplemented) {
+		fmt.Println("send:", err)
+	} else if err != nil {
+		log.Fatalf("send: %v", err)
+	} else {
+		fmt.Printf("response: %+v\n", resp)
 	}
 }

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -12,14 +15,20 @@ import (
 const (
 	defaultBaseURL = "https://api.anthropic.com"
 
-	// defaultTimeout bounds the whole HTTP exchange. A non-streaming request
-	// with max_tokens=16000 can legitimately take minutes, so this is generous;
-	// callers that need a tighter limit pass a ctx with a deadline to Send.
-	defaultTimeout = 10 * time.Minute
-)
+	// anthropicVersion is the required anthropic-version header value.
+	anthropicVersion = "2023-06-01"
 
-// errNotImplemented is returned by Send until the HTTP call is written.
-var errNotImplemented = errors.New("anthropic client: send not implemented")
+	// defaultTimeout bounds the whole HTTP exchange. http.Client has no
+	// timeout by default, so without it a stuck connection hangs forever.
+	// A non-streaming request with max_tokens=16000 can legitimately take
+	// minutes, so this is generous; callers that need a tighter limit pass a
+	// ctx with a deadline to Send.
+	defaultTimeout = 10 * time.Minute
+
+	// maxErrorBody caps how much of a non-2xx response body is read into the
+	// error message.
+	maxErrorBody = 64 << 10
+)
 
 // Client talks to the Anthropic Messages API.
 //
@@ -45,18 +54,35 @@ func NewClient(apiKey string) *Client {
 }
 
 // Send sends req to POST /v1/messages and returns the parsed response.
-//
-// For now it only serializes the request and returns errNotImplemented.
+// A non-2xx status is returned as an error containing the status and body.
 func (c *Client) Send(ctx context.Context, req anthropic.MessageRequest) (*anthropic.MessageResponse, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
 	body, err := encodeRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	_ = body // will become the HTTP request body
 
-	return nil, errNotImplemented
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+	httpReq.Header.Set("x-api-key", c.apiKey)
+	httpReq.Header.Set("anthropic-version", anthropicVersion)
+	httpReq.Header.Set("content-type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		return nil, fmt.Errorf("anthropic api: %s: %s", resp.Status, bytes.TrimSpace(errBody))
+	}
+
+	var res anthropic.MessageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &res, nil
 }

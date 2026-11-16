@@ -20,7 +20,7 @@ others later) and handles the things every team ends up rebuilding:
 
 ## Roadmap
 
-- [ ] Week 1: Go module, CLI client for the Claude API on plain `net/http`
+- [x] Week 1: Go module, CLI client for the Claude API on plain `net/http`
 - [ ] Week 2: `Provider` interface, typed errors, table-driven tests, CI
 - [ ] Week 3: concurrency: hedged requests, cancellation, streaming, rate limiting
 - [ ] Week 4: HTTP server, Postgres, API keys, request log

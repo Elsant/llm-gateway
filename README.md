@@ -32,17 +32,55 @@ others later) and handles the things every team ends up rebuilding:
 
 - Go 1.27+
 
-## Run
+## Install
 
 ```bash
-go run ./cmd/gateway
+go install github.com/elsant/llm-gateway/cmd/gateway@latest
 ```
+
+The binary lands in `$(go env GOPATH)/bin` (make sure it is on your `PATH`).
+From a local checkout: `go install ./cmd/gateway`.
+
+## Configuration
+
+The CLI reads your API key from the environment:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Create a key at <https://console.anthropic.com/settings/keys>.
+
+## Usage
+
+```bash
+gateway [flags] "<prompt>"
+```
+
+| Flag          | Default           | Description                         |
+|---------------|-------------------|-------------------------------------|
+| `-model`      | `claude-opus-5-5` | Claude model ID                     |
+| `-max-tokens` | `1024`            | maximum number of tokens to generate |
+| `-system`     | empty (none)      | system prompt                       |
+
+Flags go before the prompt:
+
+```bash
+gateway "What is a goroutine?"
+gateway -model claude-haiku-5-5 -max-tokens 256 -system "Answer in one sentence." "What is a goroutine?"
+```
+
+Errors go to stderr with exit code 1:
+
+- `ANTHROPIC_API_KEY` not set: a hint on how to set it;
+- 4xx: `error.type` and `error.message` from the API (401 = invalid key, 429 = rate limit);
+- 5xx: "provider unavailable" with the HTTP status.
 
 ## Project layout
 
 ```
 cmd/gateway/         entrypoint
-internal/anthropic/   Messages API wire types
+internal/anthropic/   Messages API wire types and APIError
 ```
 
 ## License

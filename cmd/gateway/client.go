@@ -54,7 +54,8 @@ func NewClient(apiKey string) *Client {
 }
 
 // Send sends req to POST /v1/messages and returns the parsed response.
-// A non-2xx status is returned as an error containing the status and body.
+// A non-2xx status is returned as a wrapped *anthropic.APIError; use
+// errors.As to inspect it.
 func (c *Client) Send(ctx context.Context, req anthropic.MessageRequest) (*anthropic.MessageResponse, error) {
 	body, err := encodeRequest(req)
 	if err != nil {
@@ -77,7 +78,7 @@ func (c *Client) Send(ctx context.Context, req anthropic.MessageRequest) (*anthr
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("anthropic api: %s: %s", resp.Status, bytes.TrimSpace(errBody))
+		return nil, fmt.Errorf("anthropic api: %w", anthropic.ParseAPIError(resp.StatusCode, errBody))
 	}
 
 	var res anthropic.MessageResponse

@@ -22,7 +22,7 @@ func TestBuildRequest_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"model":"claude-opus-5-5","max_tokens":16000,"messages":[{"role":"user","content":[{"type":"text","text":"Hi"}]}]}`
+	want := `{"model":"claude-opus-5-5","max_tokens":1024,"messages":[{"role":"user","content":[{"type":"text","text":"Hi"}]}]}`
 	if string(body) != want {
 		t.Errorf("got  %s\nwant %s", body, want)
 	}

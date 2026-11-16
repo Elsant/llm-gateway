@@ -14,22 +14,34 @@ const (
 	// Claude API docs, 2026-11). Use the bare ID, never a date-suffixed one.
 	defaultModel = "claude-opus-5-5"
 
-	// defaultMaxTokens is the recommended ceiling for non-streaming requests:
-	// large enough not to cut answers mid-thought, small enough to stay under
-	// HTTP timeouts. Streaming requests can go higher.
-	defaultMaxTokens = 16000
+	// defaultMaxTokens is the default -max-tokens value: enough for a short
+	// CLI answer. Raise it with the flag for longer outputs.
+	defaultMaxTokens = 1024
 )
 
 // errEmptyPrompt is returned by buildRequest for an empty or whitespace-only
 // prompt. It is a package-level value so callers can check it with errors.Is.
 var errEmptyPrompt = errors.New("prompt is empty")
 
+// requestConfig holds the request parameters set by command-line flags.
+type requestConfig struct {
+	Model     string
+	MaxTokens int
+	System    string // empty = no system prompt
+}
+
+// defaultConfig returns the config used when no flags are given.
+func defaultConfig() requestConfig {
+	return requestConfig{Model: defaultModel, MaxTokens: defaultMaxTokens}
+}
+
 // newMessageRequest returns a request with a single user message containing
-// prompt and the default model and max_tokens.
-func newMessageRequest(prompt string) anthropic.MessageRequest {
+// prompt and the model, max_tokens and system prompt from cfg.
+func newMessageRequest(cfg requestConfig, prompt string) anthropic.MessageRequest {
 	return anthropic.MessageRequest{
-		Model:     defaultModel,
-		MaxTokens: defaultMaxTokens,
+		Model:     cfg.Model,
+		MaxTokens: cfg.MaxTokens,
+		System:    cfg.System,
 		Messages: []anthropic.Message{
 			{
 				Role:    anthropic.RoleUser,
@@ -49,10 +61,10 @@ func encodeRequest(req anthropic.MessageRequest) ([]byte, error) {
 }
 
 // buildRequest returns the JSON body of POST /v1/messages with a single user
-// message containing prompt.
+// message containing prompt and the default config.
 func buildRequest(prompt string) ([]byte, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return nil, errEmptyPrompt
 	}
-	return encodeRequest(newMessageRequest(prompt))
+	return encodeRequest(newMessageRequest(defaultConfig(), prompt))
 }

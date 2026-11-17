@@ -73,14 +73,20 @@ gateway -model claude-haiku-5-5 -max-tokens 256 -system "Answer in one sentence.
 Errors go to stderr with exit code 1:
 
 - `ANTHROPIC_API_KEY` not set: a hint on how to set it;
-- 4xx: `error.type` and `error.message` from the API (401 = invalid key, 429 = rate limit);
-- 5xx: "provider unavailable" with the HTTP status.
+- 401 (`gateway.ErrUnauthorized`): invalid API key;
+- 429 (`gateway.ErrRateLimited`): rate limit exceeded, wait and retry;
+- other 4xx: request rejected;
+- 5xx: provider unavailable;
+
+each followed by the HTTP status, `error.type` and `error.message` from the API.
 
 ## Project layout
 
 ```
-cmd/gateway/         entrypoint
-internal/anthropic/   Messages API wire types and APIError
+cmd/gateway/                 CLI entrypoint, -provider selection, echo stub
+internal/gateway/            Provider interface, Request/Response, APIError and sentinel errors
+internal/provider/anthropic/ Anthropic client implementing gateway.Provider
+internal/anthropic/          Messages API wire types
 ```
 
 ## License

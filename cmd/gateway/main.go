@@ -5,11 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 
-	api "github.com/elsant/llm-gateway/internal/anthropic"
 	"github.com/elsant/llm-gateway/internal/gateway"
 	"github.com/elsant/llm-gateway/internal/provider/anthropic"
 )
@@ -83,25 +81,28 @@ func newProvider(name string) (gateway.Provider, error) {
 	}
 }
 
-// describeError turns an error from Provider.Complete into a message for the user.
-// API errors get a short explanation of the common cases; anything else
-// (network failure, timeout, bad JSON) is printed as is.
+// describeError turns an error from Provider.Complete into a message for the
+// user. Provider API errors get a short explanation; anything else (network
+// failure, timeout, bad JSON) is printed as is. The raw API error follows in
+// parentheses so the details are never lost.
 func describeError(err error) string {
-	var apiErr *api.APIError
+	var apiErr *gateway.APIError
 	if !errors.As(err, &apiErr) {
 		return err.Error()
 	}
 
 	var hint string
 	switch {
+	case errors.Is(err, gateway.ErrUnauthorized):
+		hint = "invalid API key, check ANTHROPIC_API_KEY"
+	case errors.Is(err, gateway.ErrRateLimited):
+		hint = "rate limit exceeded, wait and retry"
 	case apiErr.Status >= 500:
 		hint = "provider unavailable, try again later"
-	case apiErr.Status == http.StatusUnauthorized:
-		hint = "invalid API key, check ANTHROPIC_API_KEY"
-	case apiErr.Status == http.StatusTooManyRequests:
-		hint = "rate limit exceeded, wait and retry"
+	case apiErr.Status >= 400:
+		hint = "request rejected, check -model, -max-tokens and the prompt"
 	default:
-		hint = "request rejected"
+		hint = "unexpected response from provider"
 	}
 	return fmt.Sprintf("%s (%s)", hint, apiErr)
 }

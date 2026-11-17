@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	api "github.com/elsant/llm-gateway/internal/anthropic"
 	"github.com/elsant/llm-gateway/internal/gateway"
 )
 
@@ -47,9 +46,9 @@ func TestComplete_APIError(t *testing.T) {
 			c.baseURL = srv.URL
 			_, err := c.Complete(context.Background(), userRequest("hi"))
 
-			var apiErr *api.APIError
+			var apiErr *gateway.APIError
 			if !errors.As(err, &apiErr) {
-				t.Fatalf("err = %v, want *api.APIError", err)
+				t.Fatalf("err = %v, want *gateway.APIError", err)
 			}
 			if apiErr.Status != tt.status || apiErr.Type != tt.wantType {
 				t.Errorf("got status=%d type=%q, want %d %q", apiErr.Status, apiErr.Type, tt.status, tt.wantType)

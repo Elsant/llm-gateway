@@ -59,8 +59,9 @@ func New(apiKey string) *Client {
 }
 
 // Complete sends req to POST /v1/messages and returns the text response.
-// A non-2xx status is returned as a wrapped *api.APIError
-// (internal/anthropic); use errors.As to inspect it.
+// A non-2xx status is returned as a wrapped *gateway.APIError; use errors.As
+// to inspect it, or errors.Is with gateway.ErrUnauthorized and
+// gateway.ErrRateLimited for 401 and 429.
 func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Response, error) {
 	body, err := json.Marshal(toMessageRequest(req))
 	if err != nil {
@@ -83,7 +84,7 @@ func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Res
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return gateway.Response{}, fmt.Errorf("anthropic api: %w", api.ParseAPIError(resp.StatusCode, errBody))
+		return gateway.Response{}, fmt.Errorf("anthropic api: %w", parseAPIError(resp.StatusCode, errBody))
 	}
 
 	var res api.MessageResponse

@@ -9,19 +9,29 @@ import (
 	"os"
 	"strings"
 
-	"github.com/elsant/llm-gateway/internal/anthropic"
+	api "github.com/elsant/llm-gateway/internal/anthropic"
+	"github.com/elsant/llm-gateway/internal/gateway"
+	"github.com/elsant/llm-gateway/internal/provider/anthropic"
+)
+
+// Compile-time checks that the providers satisfy gateway.Provider.
+var (
+	_ gateway.Provider = (*anthropic.Client)(nil)
+	_ gateway.Provider = echoProvider{}
 )
 
 const usage = `usage: gateway [flags] "<prompt>"
 
-Sends a prompt to the Claude Messages API and prints the response text.
-Requires the ANTHROPIC_API_KEY environment variable.
+Sends a prompt to an LLM provider and prints the response text.
+The anthropic provider (default) requires the ANTHROPIC_API_KEY environment
+variable; the echo provider prints the prompt back and needs no key.
 
 flags:
 `
 
 func main() {
 	cfg := defaultConfig()
+	providerName := flag.String("provider", "anthropic", "provider to use: anthropic or echo")
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "Claude model ID")
 	flag.IntVar(&cfg.MaxTokens, "max-tokens", cfg.MaxTokens, "maximum number of tokens to generate")
 	flag.StringVar(&cfg.System, "system", "", "system prompt (empty = none)")
@@ -40,29 +50,44 @@ func main() {
 		os.Exit(2)
 	}
 
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "error: ANTHROPIC_API_KEY is not set")
-		fmt.Fprintln(os.Stderr, "hint: create a key at https://console.anthropic.com/settings/keys and run")
-		fmt.Fprintln(os.Stderr, "      export ANTHROPIC_API_KEY=sk-ant-...")
+	provider, err := newProvider(*providerName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 
-	client := NewClient(apiKey)
-	resp, err := client.Send(context.Background(), newMessageRequest(cfg, flag.Arg(0)))
+	resp, err := provider.Complete(context.Background(), newRequest(cfg, flag.Arg(0)))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", describeError(err))
 		os.Exit(1)
 	}
 
-	fmt.Println(responseText(resp))
+	fmt.Println(resp.Text)
 }
 
-// describeError turns an error from Client.Send into a message for the user.
+// newProvider returns the provider selected by -provider.
+func newProvider(name string) (gateway.Provider, error) {
+	switch name {
+	case "anthropic":
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			return nil, errors.New("ANTHROPIC_API_KEY is not set\n" +
+				"hint: create a key at https://console.anthropic.com/settings/keys and run\n" +
+				"      export ANTHROPIC_API_KEY=sk-ant-...")
+		}
+		return anthropic.New(apiKey), nil
+	case "echo":
+		return echoProvider{}, nil
+	default:
+		return nil, fmt.Errorf("unknown -provider %q (want anthropic or echo)", name)
+	}
+}
+
+// describeError turns an error from Provider.Complete into a message for the user.
 // API errors get a short explanation of the common cases; anything else
 // (network failure, timeout, bad JSON) is printed as is.
 func describeError(err error) string {
-	var apiErr *anthropic.APIError
+	var apiErr *api.APIError
 	if !errors.As(err, &apiErr) {
 		return err.Error()
 	}
@@ -79,15 +104,4 @@ func describeError(err error) string {
 		hint = "request rejected"
 	}
 	return fmt.Sprintf("%s (%s)", hint, apiErr)
-}
-
-// responseText joins the text of all "text" content blocks in resp.
-func responseText(resp *anthropic.MessageResponse) string {
-	var sb strings.Builder
-	for _, block := range resp.Content {
-		if block.Type == "text" {
-			sb.WriteString(block.Text)
-		}
-	}
-	return sb.String()
 }

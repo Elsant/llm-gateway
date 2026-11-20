@@ -10,10 +10,8 @@ import (
 	"github.com/elsant/llm-gateway/internal/config"
 	"github.com/elsant/llm-gateway/internal/gateway"
 	"github.com/elsant/llm-gateway/internal/provider/anthropic"
+	"github.com/elsant/llm-gateway/internal/provider/echo"
 )
-
-// echoProvider must satisfy gateway.Provider (anthropic.Client checks itself).
-var _ gateway.Provider = echoProvider{}
 
 func main() {
 	cfg, err := config.Load(os.Args[1:], os.Getenv)
@@ -57,7 +55,7 @@ func newProvider(cfg config.Config) (gateway.Provider, error) {
 		}
 		return anthropic.New(cfg.AnthropicAPIKey), nil
 	case "echo":
-		return echoProvider{}, nil
+		return echo.Provider{}, nil
 	default:
 		return nil, fmt.Errorf("unknown -provider %q (want anthropic or echo)", cfg.Provider)
 	}

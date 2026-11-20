@@ -88,6 +88,7 @@ internal/config/                 flags + environment -> Config
 internal/gateway/                Provider interface, Request/Response, APIError and sentinel errors
 internal/provider/anthropic/     Anthropic client implementing gateway.Provider
 internal/provider/anthropic/api/ Messages API wire types
+internal/provider/echo/          fake provider that echoes the prompt (tests, -provider=echo)
 ```
 
 `internal/gateway` is the consumer-side contract; everything under

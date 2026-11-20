@@ -1,5 +1,7 @@
 # llm-gateway
 
+[![CI](https://github.com/Elsant/llm-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Elsant/llm-gateway/actions/workflows/ci.yml)
+
 A gateway service for LLM providers, written in Go.
 
 > **Status:** early development. This repository is built in public as part of my
@@ -21,7 +23,7 @@ others later) and handles the things every team ends up rebuilding:
 ## Roadmap
 
 - [x] Week 1: Go module, CLI client for the Claude API on plain `net/http`
-- [ ] Week 2: `Provider` interface, typed errors, table-driven tests, CI
+- [x] Week 2: `Provider` interface, typed errors, table-driven tests, CI
 - [ ] Week 3: concurrency: hedged requests, cancellation, streaming, rate limiting
 - [ ] Week 4: HTTP server, Postgres, API keys, request log
 - [ ] Week 5: logs, metrics, tracing, graceful shutdown, Docker
@@ -93,6 +95,17 @@ internal/provider/echo/          fake provider that echoes the prompt (tests, -p
 
 `internal/gateway` is the consumer-side contract; everything under
 `internal/provider/` implements it. Provider packages never import each other.
+
+## Development
+
+```bash
+go test -race -cover ./...        # unit tests (httptest fake server, no API key needed)
+golangci-lint run                 # config in .golangci.yml
+go test -fuzz=FuzzDecodeResponse -fuzztime=30s ./internal/provider/anthropic
+```
+
+CI (GitHub Actions) runs `go vet`, golangci-lint, tests with `-race` and a
+short fuzz pass on every push.
 
 ## License
 

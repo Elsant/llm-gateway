@@ -90,8 +90,13 @@ func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Res
 		return gateway.Response{}, fmt.Errorf("anthropic api: %w", parseAPIError(resp.StatusCode, errBody))
 	}
 
+	return decodeResponse(resp.Body)
+}
+
+// decodeResponse parses a successful Messages API response body.
+func decodeResponse(r io.Reader) (gateway.Response, error) {
 	var res api.MessageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := json.NewDecoder(r).Decode(&res); err != nil {
 		return gateway.Response{}, fmt.Errorf("decode response: %w", err)
 	}
 	return fromMessageResponse(res), nil

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/elsant/llm-gateway/internal/config"
 	"github.com/elsant/llm-gateway/internal/gateway"
 )
 
@@ -54,5 +56,44 @@ func TestDescribeError(t *testing.T) {
 				t.Errorf("describeError = %q\nwant          %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewProvider(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     config.Config
+		wantErr string // empty = success
+	}{
+		{"anthropic with key", config.Config{Provider: "anthropic", AnthropicAPIKey: "sk-test"}, ""},
+		{"anthropic without key", config.Config{Provider: "anthropic"}, "ANTHROPIC_API_KEY is not set"},
+		{"echo needs no key", config.Config{Provider: "echo"}, ""},
+		{"unknown provider", config.Config{Provider: "openai"}, `unknown -provider "openai"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := newProvider(tt.cfg)
+			if tt.wantErr == "" {
+				if err != nil || p == nil {
+					t.Fatalf("got (%v, %v), want a provider", p, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("err = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewRequest(t *testing.T) {
+	cfg := config.Config{Model: "m", MaxTokens: 7, System: "sys", Prompt: "hi"}
+	got := newRequest(cfg)
+	if got.Model != "m" || got.MaxTokens != 7 || got.System != "sys" {
+		t.Errorf("request params = %+v", got)
+	}
+	want := []gateway.Message{{Role: gateway.RoleUser, Text: "hi"}}
+	if len(got.Messages) != 1 || got.Messages[0] != want[0] {
+		t.Errorf("Messages = %+v, want %+v", got.Messages, want)
 	}
 }

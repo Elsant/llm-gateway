@@ -7,10 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/elsant/llm-gateway/internal/gateway"
+	"github.com/elsant/llm-gateway/internal/provider/anthropic/api"
 )
 
 func userRequest(text string) gateway.Request {
@@ -21,66 +21,191 @@ func userRequest(text string) gateway.Request {
 	}
 }
 
-func TestComplete_APIError(t *testing.T) {
+// newTestClient starts a fake Messages API backed by handler and returns a
+// Client pointed at it. The server is closed when the test ends.
+func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	c := New("test-key")
+	c.baseURL = srv.URL
+	return c
+}
+
+// respond returns a handler that replies with status and body.
+func respond(status int, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
+	}
+}
+
+func TestComplete(t *testing.T) {
 	tests := []struct {
-		name     string
-		status   int
-		body     string
-		wantType string
+		name    string
+		status  int
+		body    string
+		want    gateway.Response
+		wantErr error             // sentinel matched with errors.Is; nil = no sentinel check
+		wantAPI *gateway.APIError // nil = error must not be an *APIError
+		wantOK  bool
 	}{
-		{"401", 401, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`, "authentication_error"},
-		{"429", 429, `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`, "rate_limit_error"},
-		{"400", 400, `{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}`, "invalid_request_error"},
-		{"529", 529, `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`, "overloaded_error"},
-		{"502 html", 502, `<html>bad gateway</html>`, ""},
+		{
+			name:   "200 success",
+			status: 200,
+			body: `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5",
+				"content":[{"type":"text","text":"Hello"},{"type":"text","text":", world"}],
+				"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":4}}`,
+			want:   gateway.Response{Text: "Hello, world", Model: "claude-opus-5-5", StopReason: "end_turn"},
+			wantOK: true,
+		},
+		{
+			name:   "200 skips non-text blocks",
+			status: 200,
+			body:   `{"model":"m","stop_reason":"end_turn","content":[{"type":"thinking"},{"type":"text","text":"ok"}]}`,
+			want:   gateway.Response{Text: "ok", Model: "m", StopReason: "end_turn"},
+			wantOK: true,
+		},
+		{
+			name:    "401 unauthorized",
+			status:  401,
+			body:    `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`,
+			wantErr: gateway.ErrUnauthorized,
+			wantAPI: &gateway.APIError{Status: 401, Type: "authentication_error", Message: "invalid x-api-key"},
+		},
+		{
+			name:    "429 rate limited",
+			status:  429,
+			body:    `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
+			wantErr: gateway.ErrRateLimited,
+			wantAPI: &gateway.APIError{Status: 429, Type: "rate_limit_error", Message: "slow down"},
+		},
+		{
+			name:    "400 invalid request",
+			status:  400,
+			body:    `{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}`,
+			wantAPI: &gateway.APIError{Status: 400, Type: "invalid_request_error", Message: "bad model"},
+		},
+		{
+			name:    "500 api error",
+			status:  500,
+			body:    `{"type":"error","error":{"type":"api_error","message":"internal"}}`,
+			wantAPI: &gateway.APIError{Status: 500, Type: "api_error", Message: "internal"},
+		},
+		{
+			name:    "529 overloaded",
+			status:  529,
+			body:    `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`,
+			wantAPI: &gateway.APIError{Status: 529, Type: "overloaded_error", Message: "Overloaded"},
+		},
+		{
+			name:    "502 html from proxy",
+			status:  502,
+			body:    `<html>bad gateway</html>`,
+			wantAPI: &gateway.APIError{Status: 502, Message: "<html>bad gateway</html>"},
+		},
+		{
+			name:   "200 broken json",
+			status: 200,
+			body:   `{"model":"m","content":[{"type":"text","text":"tru`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.status)
-				w.Write([]byte(tt.body))
-			}))
-			defer srv.Close()
+			c := newTestClient(t, respond(tt.status, tt.body))
+			got, err := c.Complete(context.Background(), userRequest("hi"))
 
-			c := New("test-key")
-			c.baseURL = srv.URL
-			_, err := c.Complete(context.Background(), userRequest("hi"))
+			if tt.wantOK {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got != tt.want {
+					t.Errorf("resp = %+v, want %+v", got, tt.want)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("want error, got resp %+v", got)
+			}
+			if got != (gateway.Response{}) {
+				t.Errorf("resp = %+v, want zero value on error", got)
+			}
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Errorf("errors.Is(err, %v) = false; err = %v", tt.wantErr, err)
+			}
 
 			var apiErr *gateway.APIError
-			if !errors.As(err, &apiErr) {
-				t.Fatalf("err = %v, want *gateway.APIError", err)
-			}
-			if apiErr.Status != tt.status || apiErr.Type != tt.wantType {
-				t.Errorf("got status=%d type=%q, want %d %q", apiErr.Status, apiErr.Type, tt.status, tt.wantType)
+			isAPI := errors.As(err, &apiErr)
+			switch {
+			case tt.wantAPI == nil && isAPI:
+				t.Errorf("err = %v, want a non-API error", err)
+			case tt.wantAPI != nil && !isAPI:
+				t.Errorf("err = %v, want *gateway.APIError", err)
+			case tt.wantAPI != nil && *apiErr != *tt.wantAPI:
+				t.Errorf("APIError = %+v, want %+v", *apiErr, *tt.wantAPI)
 			}
 		})
 	}
 }
 
-func TestComplete_RequestHeadersAndBody(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("x-api-key"); got != "test-key" {
-			t.Errorf("x-api-key = %q", got)
+func TestComplete_SendsHeadersAndBody(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
+			t.Errorf("request = %s %s, want POST /v1/messages", r.Method, r.URL.Path)
 		}
-		body, _ := io.ReadAll(r.Body)
-		if !strings.Contains(string(body), `"system":"be brief"`) {
-			t.Errorf("body missing system prompt: %s", body)
+		for header, want := range map[string]string{
+			"x-api-key":         "test-key",
+			"anthropic-version": anthropicVersion,
+			"content-type":      "application/json",
+		} {
+			if got := r.Header.Get(header); got != want {
+				t.Errorf("header %s = %q, want %q", header, got, want)
+			}
 		}
-		w.Write([]byte(`{"model":"m","stop_reason":"end_turn","content":[{"type":"text","text":"o"},{"type":"text","text":"k"}]}`))
-	}))
-	defer srv.Close()
 
-	c := New("test-key")
-	c.baseURL = srv.URL
+		var body api.MessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		if body.System != "be brief" || body.Model != "claude-opus-5-5" || body.MaxTokens != 1024 {
+			t.Errorf("body = %+v", body)
+		}
+		respond(200, `{"model":"m","stop_reason":"end_turn","content":[{"type":"text","text":"ok"}]}`)(w, r)
+	})
+
 	req := userRequest("hi")
 	req.System = "be brief"
-	resp, err := c.Complete(context.Background(), req)
-	if err != nil {
+	if _, err := c.Complete(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	want := gateway.Response{Text: "ok", Model: "m", StopReason: "end_turn"}
-	if resp != want {
-		t.Errorf("resp = %+v, want %+v", resp, want)
+}
+
+func TestComplete_ContextCanceled(t *testing.T) {
+	c := newTestClient(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("request reached the server despite a canceled context")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.Complete(ctx, userRequest("hi"))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestComplete_NetworkError(t *testing.T) {
+	c := New("test-key")
+	c.baseURL = "http://127.0.0.1:1" // nothing listens on port 1
+	_, err := c.Complete(context.Background(), userRequest("hi"))
+	if err == nil {
+		t.Fatal("want error for unreachable server")
+	}
+	var apiErr *gateway.APIError
+	if errors.As(err, &apiErr) {
+		t.Errorf("err = %v, want a transport error, not *gateway.APIError", err)
 	}
 }
 

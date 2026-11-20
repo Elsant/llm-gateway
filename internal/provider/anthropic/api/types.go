@@ -6,6 +6,7 @@ package api
 // Role is the author of a message in the conversation.
 type Role string
 
+// Roles accepted by the Messages API.
 const (
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
@@ -57,7 +58,7 @@ type Message struct {
 }
 
 // ContentBlock is one block of message content. Only "text" blocks are
-// modelled so far (no image, tool_use, tool_result, thinking, ...).
+// modeled so far (no image, tool_use, tool_result, thinking, ...).
 type ContentBlock struct {
 	Type string `json:"type"`
 	// omitempty so that future non-text blocks don't carry "text": "".
@@ -92,7 +93,7 @@ type MessageResponse struct {
 
 // Usage reports billed token counts. The API also returns cache-related
 // fields (cache_creation_input_tokens, cache_read_input_tokens); they are not
-// modelled yet.
+// modeled yet.
 type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`

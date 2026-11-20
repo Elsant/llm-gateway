@@ -1,3 +1,8 @@
+// Command gateway sends a prompt to an LLM provider and prints the reply.
+//
+// Usage:
+//
+//	gateway [-provider anthropic|echo] [-model ID] [-max-tokens N] [-system TEXT] "<prompt>"
 package main
 
 import (
@@ -32,6 +37,10 @@ func main() {
 	provider, err := newProvider(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		if errors.Is(err, errNoAPIKey) {
+			fmt.Fprintln(os.Stderr, "hint: create a key at https://console.anthropic.com/settings/keys and run")
+			fmt.Fprintln(os.Stderr, "      export "+config.EnvAnthropicAPIKey+"=sk-ant-...")
+		}
 		os.Exit(1)
 	}
 
@@ -44,14 +53,16 @@ func main() {
 	fmt.Println(resp.Text)
 }
 
+// errNoAPIKey is returned by newProvider when the anthropic provider is
+// selected but no API key is configured.
+var errNoAPIKey = errors.New(config.EnvAnthropicAPIKey + " is not set")
+
 // newProvider returns the provider selected by -provider.
 func newProvider(cfg config.Config) (gateway.Provider, error) {
 	switch cfg.Provider {
 	case "anthropic":
 		if cfg.AnthropicAPIKey == "" {
-			return nil, errors.New(config.EnvAnthropicAPIKey + " is not set\n" +
-				"hint: create a key at https://console.anthropic.com/settings/keys and run\n" +
-				"      export " + config.EnvAnthropicAPIKey + "=sk-ant-...")
+			return nil, errNoAPIKey
 		}
 		return anthropic.New(cfg.AnthropicAPIKey), nil
 	case "echo":

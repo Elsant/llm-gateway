@@ -15,6 +15,7 @@ type Provider interface {
 // Role is the author of a message.
 type Role string
 
+// Message roles.
 const (
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"

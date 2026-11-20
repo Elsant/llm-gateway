@@ -83,7 +83,9 @@ func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Res
 	if err != nil {
 		return gateway.Response{}, fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	// A Close error after the body has been read carries no information
+	// for the caller, so it is deliberately dropped.
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))

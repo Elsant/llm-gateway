@@ -99,7 +99,8 @@ func PrintUsage(w io.Writer) {
 	cfg := Config{Provider: DefaultProvider, Model: DefaultModel, MaxTokens: DefaultMaxTokens}
 	fs := newFlagSet(&cfg)
 	fs.SetOutput(w)
-	fmt.Fprint(w, usage)
+	// Help goes to a terminal; there is nothing useful to do if writing fails.
+	_, _ = io.WriteString(w, usage)
 	fs.PrintDefaults()
 }
 

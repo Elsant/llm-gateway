@@ -1,6 +1,6 @@
 # Notes
 
-## Day 2: Messages API types (`internal/anthropic/types.go`)
+## Day 2: Messages API types (now `internal/provider/anthropic/api/types.go`)
 
 Source of truth: the HTTP API reference (https://docs.anthropic.com/en/api/messages), not the SDK.
 

@@ -1,7 +1,7 @@
-// Package anthropic contains wire types for the Anthropic Messages API
+// Package api contains wire types for the Anthropic Messages API
 // (POST /v1/messages). Field names and shapes follow the HTTP API reference,
 // not any SDK: https://docs.anthropic.com/en/api/messages
-package anthropic
+package api
 
 // Role is the author of a message in the conversation.
 type Role string

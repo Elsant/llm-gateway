@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/elsant/llm-gateway/internal/anthropic"
 	"github.com/elsant/llm-gateway/internal/gateway"
+	"github.com/elsant/llm-gateway/internal/provider/anthropic/api"
 )
 
 const (
@@ -33,6 +33,9 @@ const (
 	// error message.
 	maxErrorBody = 64 << 10
 )
+
+// Client must satisfy gateway.Provider.
+var _ gateway.Provider = (*Client)(nil)
 
 // Client talks to the Anthropic Messages API.
 //

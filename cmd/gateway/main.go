@@ -6,55 +6,38 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
+	"github.com/elsant/llm-gateway/internal/config"
 	"github.com/elsant/llm-gateway/internal/gateway"
 	"github.com/elsant/llm-gateway/internal/provider/anthropic"
 )
 
-// Compile-time checks that the providers satisfy gateway.Provider.
-var (
-	_ gateway.Provider = (*anthropic.Client)(nil)
-	_ gateway.Provider = echoProvider{}
-)
-
-const usage = `usage: gateway [flags] "<prompt>"
-
-Sends a prompt to an LLM provider and prints the response text.
-The anthropic provider (default) requires the ANTHROPIC_API_KEY environment
-variable; the echo provider prints the prompt back and needs no key.
-
-flags:
-`
+// echoProvider must satisfy gateway.Provider (anthropic.Client checks itself).
+var _ gateway.Provider = echoProvider{}
 
 func main() {
-	cfg := defaultConfig()
-	providerName := flag.String("provider", "anthropic", "provider to use: anthropic or echo")
-	flag.StringVar(&cfg.Model, "model", cfg.Model, "Claude model ID")
-	flag.IntVar(&cfg.MaxTokens, "max-tokens", cfg.MaxTokens, "maximum number of tokens to generate")
-	flag.StringVar(&cfg.System, "system", "", "system prompt (empty = none)")
-	flag.Usage = func() {
-		fmt.Fprint(flag.CommandLine.Output(), usage)
-		flag.PrintDefaults()
-	}
-	flag.Parse()
-
-	if flag.NArg() != 1 || strings.TrimSpace(flag.Arg(0)) == "" {
-		flag.Usage()
+	cfg, err := config.Load(os.Args[1:], os.Getenv)
+	var usageErr *config.UsageError
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		config.PrintUsage(os.Stdout)
+		return
+	case errors.As(err, &usageErr):
+		fmt.Fprintln(os.Stderr, "error:", err)
+		config.PrintUsage(os.Stderr)
 		os.Exit(2)
-	}
-	if cfg.MaxTokens <= 0 {
-		fmt.Fprintln(os.Stderr, "error: -max-tokens must be positive")
-		os.Exit(2)
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
 	}
 
-	provider, err := newProvider(*providerName)
+	provider, err := newProvider(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 
-	resp, err := provider.Complete(context.Background(), newRequest(cfg, flag.Arg(0)))
+	resp, err := provider.Complete(context.Background(), newRequest(cfg))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", describeError(err))
 		os.Exit(1)
@@ -64,20 +47,19 @@ func main() {
 }
 
 // newProvider returns the provider selected by -provider.
-func newProvider(name string) (gateway.Provider, error) {
-	switch name {
+func newProvider(cfg config.Config) (gateway.Provider, error) {
+	switch cfg.Provider {
 	case "anthropic":
-		apiKey := os.Getenv("ANTHROPIC_API_KEY")
-		if apiKey == "" {
-			return nil, errors.New("ANTHROPIC_API_KEY is not set\n" +
+		if cfg.AnthropicAPIKey == "" {
+			return nil, errors.New(config.EnvAnthropicAPIKey + " is not set\n" +
 				"hint: create a key at https://console.anthropic.com/settings/keys and run\n" +
-				"      export ANTHROPIC_API_KEY=sk-ant-...")
+				"      export " + config.EnvAnthropicAPIKey + "=sk-ant-...")
 		}
-		return anthropic.New(apiKey), nil
+		return anthropic.New(cfg.AnthropicAPIKey), nil
 	case "echo":
 		return echoProvider{}, nil
 	default:
-		return nil, fmt.Errorf("unknown -provider %q (want anthropic or echo)", name)
+		return nil, fmt.Errorf("unknown -provider %q (want anthropic or echo)", cfg.Provider)
 	}
 }
 

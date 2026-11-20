@@ -83,11 +83,15 @@ each followed by the HTTP status, `error.type` and `error.message` from the API.
 ## Project layout
 
 ```
-cmd/gateway/                 CLI entrypoint, -provider selection, echo stub
-internal/gateway/            Provider interface, Request/Response, APIError and sentinel errors
-internal/provider/anthropic/ Anthropic client implementing gateway.Provider
-internal/anthropic/          Messages API wire types
+cmd/gateway/                     CLI entrypoint: wires config, provider and output
+internal/config/                 flags + environment -> Config
+internal/gateway/                Provider interface, Request/Response, APIError and sentinel errors
+internal/provider/anthropic/     Anthropic client implementing gateway.Provider
+internal/provider/anthropic/api/ Messages API wire types
 ```
+
+`internal/gateway` is the consumer-side contract; everything under
+`internal/provider/` implements it. Provider packages never import each other.
 
 ## License
 

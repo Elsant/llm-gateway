@@ -17,6 +17,13 @@ linters:
     - unparam
     - usestdlibvars  # http.MethodPost, http.StatusOK, ...
   settings:
+    errcheck:
+      # CLI output to stdout/stderr: if printing fails there is nowhere left
+      # to report it. Applies to fmt.Fprint* only, not to Write/Close.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     govet:
       enable-all: true
       disable:

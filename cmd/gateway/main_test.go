@@ -12,7 +12,7 @@ import (
 
 func TestDescribeError(t *testing.T) {
 	// wrap mimics how a provider returns API errors: wrapped with %w.
-	wrap := func(e *gateway.APIError) error { return fmt.Errorf("anthropic api: %w", e) }
+	wrap := func(e *gateway.APIError) error { return fmt.Errorf("anthropic: api: %w", e) }
 
 	tests := []struct {
 		name string

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/elsant/llm-gateway/internal/gateway"
@@ -36,51 +37,66 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 // respond returns a handler that replies with status and body.
 func respond(status int, body string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "application/json")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, body)
 	}
 }
 
-func TestComplete(t *testing.T) {
+func TestComplete_Success(t *testing.T) {
 	tests := []struct {
-		name    string
-		status  int
-		body    string
-		want    gateway.Response
-		wantErr error             // sentinel matched with errors.Is; nil = no sentinel check
-		wantAPI *gateway.APIError // nil = error must not be an *APIError
-		wantOK  bool
+		name string
+		body string
+		want gateway.Response
 	}{
 		{
-			name:   "200 success",
-			status: 200,
+			name: "text blocks are joined",
 			body: `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5",
 				"content":[{"type":"text","text":"Hello"},{"type":"text","text":", world"}],
 				"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":4}}`,
-			want:   gateway.Response{Text: "Hello, world", Model: "claude-opus-5-5", StopReason: "end_turn"},
-			wantOK: true,
+			want: gateway.Response{Text: "Hello, world", Model: "claude-opus-5-5", StopReason: "end_turn"},
 		},
 		{
-			name:   "200 skips non-text blocks",
-			status: 200,
-			body:   `{"model":"m","stop_reason":"end_turn","content":[{"type":"thinking"},{"type":"text","text":"ok"}]}`,
-			want:   gateway.Response{Text: "ok", Model: "m", StopReason: "end_turn"},
-			wantOK: true,
+			name: "non-text blocks are skipped",
+			body: `{"model":"m","stop_reason":"end_turn","content":[{"type":"thinking"},{"type":"text","text":"ok"}]}`,
+			want: gateway.Response{Text: "ok", Model: "m", StopReason: "end_turn"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(t, respond(http.StatusOK, tt.body))
+			got, err := c.Complete(context.Background(), userRequest("hi"))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("resp = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestComplete_Errors(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		body     string
+		sentinel error             // matched with errors.Is; nil = none expected
+		wantAPI  *gateway.APIError // nil = must not be an *APIError
+	}{
+		{
+			name:     "401 unauthorized",
+			status:   401,
+			body:     `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`,
+			sentinel: gateway.ErrUnauthorized,
+			wantAPI:  &gateway.APIError{Status: 401, Type: "authentication_error", Message: "invalid x-api-key"},
 		},
 		{
-			name:    "401 unauthorized",
-			status:  401,
-			body:    `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`,
-			wantErr: gateway.ErrUnauthorized,
-			wantAPI: &gateway.APIError{Status: 401, Type: "authentication_error", Message: "invalid x-api-key"},
-		},
-		{
-			name:    "429 rate limited",
-			status:  429,
-			body:    `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
-			wantErr: gateway.ErrRateLimited,
-			wantAPI: &gateway.APIError{Status: 429, Type: "rate_limit_error", Message: "slow down"},
+			name:     "429 rate limited",
+			status:   429,
+			body:     `{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}`,
+			sentinel: gateway.ErrRateLimited,
+			wantAPI:  &gateway.APIError{Status: 429, Type: "rate_limit_error", Message: "slow down"},
 		},
 		{
 			name:    "400 invalid request",
@@ -116,25 +132,17 @@ func TestComplete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newTestClient(t, respond(tt.status, tt.body))
 			got, err := c.Complete(context.Background(), userRequest("hi"))
-
-			if tt.wantOK {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if got != tt.want {
-					t.Errorf("resp = %+v, want %+v", got, tt.want)
-				}
-				return
-			}
-
 			if err == nil {
 				t.Fatalf("want error, got resp %+v", got)
 			}
 			if got != (gateway.Response{}) {
 				t.Errorf("resp = %+v, want zero value on error", got)
 			}
-			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
-				t.Errorf("errors.Is(err, %v) = false; err = %v", tt.wantErr, err)
+			if !strings.HasPrefix(err.Error(), "anthropic: ") {
+				t.Errorf("err = %q, want prefix %q", err, "anthropic: ")
+			}
+			if tt.sentinel != nil && !errors.Is(err, tt.sentinel) {
+				t.Errorf("errors.Is(err, %v) = false; err = %v", tt.sentinel, err)
 			}
 
 			var apiErr *gateway.APIError

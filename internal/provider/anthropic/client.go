@@ -64,8 +64,17 @@ func New(apiKey string) *Client {
 // Complete sends req to POST /v1/messages and returns the text response.
 // A non-2xx status is returned as a wrapped *gateway.APIError; use errors.As
 // to inspect it, or errors.Is with gateway.ErrUnauthorized and
-// gateway.ErrRateLimited for 401 and 429.
+// gateway.ErrRateLimited for 401 and 429. Every error is prefixed with
+// "anthropic: " so the user can tell which provider failed.
 func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Response, error) {
+	resp, err := c.complete(ctx, req)
+	if err != nil {
+		return gateway.Response{}, fmt.Errorf("anthropic: %w", err)
+	}
+	return resp, nil
+}
+
+func (c *Client) complete(ctx context.Context, req gateway.Request) (gateway.Response, error) {
 	body, err := json.Marshal(toMessageRequest(req))
 	if err != nil {
 		return gateway.Response{}, fmt.Errorf("build request: %w", err)
@@ -75,9 +84,9 @@ func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Res
 	if err != nil {
 		return gateway.Response{}, fmt.Errorf("new request: %w", err)
 	}
-	httpReq.Header.Set("x-api-key", c.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicVersion)
-	httpReq.Header.Set("content-type", "application/json")
+	httpReq.Header.Set("X-Api-Key", c.apiKey)
+	httpReq.Header.Set("Anthropic-Version", anthropicVersion)
+	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -89,7 +98,7 @@ func (c *Client) Complete(ctx context.Context, req gateway.Request) (gateway.Res
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return gateway.Response{}, fmt.Errorf("anthropic api: %w", parseAPIError(resp.StatusCode, errBody))
+		return gateway.Response{}, fmt.Errorf("api: %w", parseAPIError(resp.StatusCode, errBody))
 	}
 
 	return decodeResponse(resp.Body)

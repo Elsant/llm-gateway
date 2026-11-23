@@ -10,7 +10,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 
 	"github.com/elsant/llm-gateway/internal/config"
 	"github.com/elsant/llm-gateway/internal/gateway"
@@ -18,39 +20,59 @@ import (
 	"github.com/elsant/llm-gateway/internal/provider/echo"
 )
 
+// Exit codes.
+const (
+	exitOK    = 0
+	exitError = 1 // runtime failure: missing key, provider error
+	exitUsage = 2 // bad command line, as with the flag package
+)
+
 func main() {
-	cfg, err := config.Load(os.Args[1:], os.Getenv)
+	// Ctrl+C cancels the in-flight request instead of killing the process
+	// mid-write; a second Ctrl+C kills it as usual.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	code := run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
+}
+
+// run is the whole CLI behind main. It takes its inputs and outputs as
+// parameters and returns the exit code instead of calling os.Exit, so tests
+// can drive it end to end.
+func run(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	cfg, err := config.Load(args, getenv)
 	var usageErr *config.UsageError
 	switch {
 	case errors.Is(err, flag.ErrHelp):
-		config.PrintUsage(os.Stdout)
-		return
+		config.PrintUsage(stdout)
+		return exitOK
 	case errors.As(err, &usageErr):
-		fmt.Fprintln(os.Stderr, "error:", err)
-		config.PrintUsage(os.Stderr)
-		os.Exit(2)
+		fmt.Fprintln(stderr, "error:", err)
+		config.PrintUsage(stderr)
+		return exitUsage
 	case err != nil:
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "error:", err)
+		return exitError
 	}
 
 	provider, err := newProvider(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(stderr, "error:", err)
 		if errors.Is(err, errNoAPIKey) {
-			fmt.Fprintln(os.Stderr, "hint: create a key at https://console.anthropic.com/settings/keys and run")
-			fmt.Fprintln(os.Stderr, "      export "+config.EnvAnthropicAPIKey+"=sk-ant-...")
+			fmt.Fprintln(stderr, "hint: create a key at https://console.anthropic.com/settings/keys and run")
+			fmt.Fprintln(stderr, "      export "+config.EnvAnthropicAPIKey+"=sk-ant-...")
 		}
-		os.Exit(1)
+		return exitError
 	}
 
-	resp, err := provider.Complete(context.Background(), newRequest(cfg))
+	resp, err := provider.Complete(ctx, newRequest(cfg))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", describeError(err))
-		os.Exit(1)
+		fmt.Fprintln(stderr, "error:", describeError(err))
+		return exitError
 	}
 
-	fmt.Println(resp.Text)
+	fmt.Fprintln(stdout, resp.Text)
+	return exitOK
 }
 
 // errNoAPIKey is returned by newProvider when the anthropic provider is
@@ -77,6 +99,10 @@ func newProvider(cfg config.Config) (gateway.Provider, error) {
 // failure, timeout, bad JSON) is printed as is. The raw API error follows in
 // parentheses so the details are never lost.
 func describeError(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "interrupted"
+	}
+
 	var apiErr *gateway.APIError
 	if !errors.As(err, &apiErr) {
 		return err.Error()
@@ -85,7 +111,7 @@ func describeError(err error) string {
 	var hint string
 	switch {
 	case errors.Is(err, gateway.ErrUnauthorized):
-		hint = "invalid API key, check ANTHROPIC_API_KEY"
+		hint = "invalid API key, check " + config.EnvAnthropicAPIKey
 	case errors.Is(err, gateway.ErrRateLimited):
 		hint = "rate limit exceeded, wait and retry"
 	case apiErr.Status >= 500:

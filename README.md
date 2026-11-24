@@ -91,6 +91,7 @@ internal/gateway/                Provider interface, Request/Response, APIError 
 internal/provider/anthropic/     Anthropic client implementing gateway.Provider
 internal/provider/anthropic/api/ Messages API wire types
 internal/provider/echo/          fake provider that echoes the prompt (tests, -provider=echo)
+examples/fetchall/                learning experiment: concurrent fetch with goroutines + WaitGroup
 ```
 
 `internal/gateway` is the consumer-side contract; everything under

@@ -149,3 +149,45 @@ Things that surprised me:
 - [ ] From scratch, no hints: an interface, two implementations, a
       table-driven test.
 - [x] CI green.
+
+## Day 15: goroutines and WaitGroup (`examples/fetchall`)
+
+Week 3 starts. No gateway changes today (theory + experiments); the
+experiment is `examples/fetchall`: fetch N URLs concurrently, print the time
+of each request.
+
+### Concurrency is not parallelism
+- **Concurrency** is about *structure*: the program is split into
+  independently running pieces (goroutines) that can make progress
+  interleaved.
+- **Parallelism** is about *execution*: pieces actually run at the same
+  instant on different cores.
+- A concurrent program on one core is still concurrent, just not parallel.
+  `fetchall` is mostly waiting on the network, so it gains from concurrency
+  even with `GOMAXPROCS=1`.
+- Ruby comparison: MRI threads are concurrent but, because of the GVL, not
+  parallel for Ruby code. They still help for I/O — the same reason
+  `fetchall` is fast. Goroutines are concurrent *and* parallel, and cost
+  ~2 KB of stack instead of an OS thread.
+
+### What `fetchall` shows
+- 20 requests × 100 ms finish in ~100 ms wall time, not 2 s (checked in
+  `TestFetchAll_Concurrent`).
+- **Results without a mutex**: allocate `results := make([]result, n)` up
+  front; goroutine `i` writes only `results[i]`. Different slice elements
+  are different memory locations, so there is no data race; `wg.Wait()`
+  makes all writes visible to the caller. `go test -race` agrees.
+- **Order is preserved for free** by indexing, no sorting afterwards.
+- **One failure doesn't stop the others**: each goroutine records its own
+  error. (Stopping everything on the first error is `errgroup` + context —
+  later this week.)
+
+### WaitGroup rules
+- `wg.Add` must happen *before* `go`, not inside the goroutine, or `Wait`
+  may return before the goroutine has registered.
+- Go 1.25+: `wg.Go(func() { ... })` does `Add(1)`, `go` and `defer Done()` in
+  one call — the first two rules can't be broken by accident.
+- Go 1.22+: loop variables are per iteration, so capturing `i` and `url` in
+  the closure is safe. Before 1.22 every goroutine could see the last value.
+- A WaitGroup must not be copied after first use (pass `*sync.WaitGroup`);
+  `go vet` (copylocks) catches it.

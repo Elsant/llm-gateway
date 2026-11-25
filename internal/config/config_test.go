@@ -31,10 +31,10 @@ func TestLoad(t *testing.T) {
 		},
 		{
 			name: "all flags",
-			args: []string{"-provider", "echo", "-model", "claude-haiku-5-5", "-max-tokens", "256", "-system", "be brief", "hi there"},
+			args: []string{"-provider", "echo", "-model", "claude-haiku-5-5", "-max-tokens", "256", "-system", "be brief", "-stream", "hi there"},
 			want: Config{
 				Provider: "echo", Model: "claude-haiku-5-5", MaxTokens: 256, System: "be brief",
-				Prompt: "hi there", AnthropicAPIKey: "sk-test",
+				Prompt: "hi there", Stream: true, AnthropicAPIKey: "sk-test",
 			},
 		},
 		{
@@ -113,7 +113,7 @@ func TestPrintUsage(t *testing.T) {
 	var buf bytes.Buffer
 	PrintUsage(&buf)
 	out := buf.String()
-	for _, want := range []string{"usage: gateway", "-provider", "-model", DefaultModel, "-max-tokens", "-system"} {
+	for _, want := range []string{"usage: gateway", "-provider", "-model", DefaultModel, "-max-tokens", "-system", "-stream"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("usage output missing %q:\n%s", want, out)
 		}

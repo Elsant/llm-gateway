@@ -64,6 +64,7 @@ gateway [flags] "<prompt>"
 | `-model`      | `claude-opus-5-5` | Claude model ID                     |
 | `-max-tokens` | `1024`            | maximum number of tokens to generate |
 | `-system`     | empty (none)      | system prompt                       |
+| `-stream`     | `false`           | print the response word by word (fake stream for now) |
 
 Flags go before the prompt:
 
@@ -92,6 +93,7 @@ internal/provider/anthropic/     Anthropic client implementing gateway.Provider
 internal/provider/anthropic/api/ Messages API wire types
 internal/provider/echo/          fake provider that echoes the prompt (tests, -provider=echo)
 examples/fetchall/                learning experiment: concurrent fetch with goroutines + WaitGroup
+examples/channels/               learning experiment: nil/open/closed channel behavior as tests
 ```
 
 `internal/gateway` is the consumer-side contract; everything under

@@ -24,6 +24,12 @@ func TestRun(t *testing.T) {
 			wantStdout: "привет\n",
 		},
 		{
+			name:       "stream prints the whole text",
+			args:       []string{"-provider", "echo", "-stream", "one two  three"},
+			wantCode:   exitOK,
+			wantStdout: "one two  three\n",
+		},
+		{
 			name:       "help goes to stdout",
 			args:       []string{"-h"},
 			wantCode:   exitOK,

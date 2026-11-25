@@ -65,6 +65,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return exitError
 	}
 
+	if cfg.Stream {
+		return stream(ctx, provider, cfg, stdout, stderr)
+	}
+
 	resp, err := provider.Complete(ctx, newRequest(cfg))
 	if err != nil {
 		fmt.Fprintln(stderr, "error:", describeError(err))
@@ -72,6 +76,27 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	}
 
 	fmt.Fprintln(stdout, resp.Text)
+	return exitOK
+}
+
+// stream prints the response chunk by chunk as it arrives on the channel.
+func stream(ctx context.Context, provider gateway.Provider, cfg config.Config, stdout, stderr io.Writer) int {
+	chunks, err := gateway.StreamWords(ctx, provider, newRequest(cfg))
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", describeError(err))
+		return exitError
+	}
+	for chunk := range chunks {
+		fmt.Fprint(stdout, chunk)
+	}
+	fmt.Fprintln(stdout)
+
+	// The channel is also closed when ctx is canceled: tell that apart from
+	// a normal end of the response.
+	if err := ctx.Err(); err != nil {
+		fmt.Fprintln(stderr, "error:", describeError(err))
+		return exitError
+	}
 	return exitOK
 }
 

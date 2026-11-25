@@ -191,3 +191,47 @@ of each request.
   the closure is safe. Before 1.22 every goroutine could see the last value.
 - A WaitGroup must not be copied after first use (pass `*sync.WaitGroup`);
   `go vet` (copylocks) catches it.
+
+## Day 16: channels and select
+
+### Project: `gateway.StreamWords`
+`StreamWords(ctx, p, req) (<-chan string, error)` calls `Complete` and hands
+the text out word by word: a fake stream, so the CLI (`-stream`) and future
+callers can be written against a channel now, and real SSE streaming slots
+in later this week.
+
+Design points:
+- **Return `<-chan string`, not `chan string`.** The receive-only type means
+  the caller can't send into it or close it; only the producer closes.
+- **The producer closes** (`defer close(out)`), so `for chunk := range ch`
+  ends by itself.
+- **Every send is inside `select` with `<-ctx.Done()`.** Otherwise a reader
+  that stops reading leaves the goroutine blocked on `out <- chunk` forever:
+  a goroutine leak. `TestStreamWords_CancelStopsSender` checks the channel
+  closes after cancel.
+- **`select` is random when several cases are ready**, so after cancel the
+  send could still win again and again. Checking `ctx.Err()` at the top of
+  each iteration caps it at one word in flight.
+- Errors that happen before streaming starts are returned directly; the
+  channel only carries data. (Mid-stream errors will need a different shape —
+  e.g. a `Chunk{Text, Err}` struct — when streaming is real.)
+
+### Channel edge cases (`examples/channels`, each row is a test)
+
+| operation | nil channel | open channel | closed channel |
+|---|---|---|---|
+| send `ch <- v` | blocks forever | blocks until receiver / buffer space | **panic** |
+| receive `<-ch` | blocks forever | blocks until a value | buffered values first, then zero value + `ok=false` immediately |
+| `close(ch)` | **panic** | OK, wakes *all* receivers | **panic** |
+| `len` / `cap` | 0 / 0 | queued / buffer size | remaining / buffer size |
+
+Takeaways:
+- Close is a **broadcast**: one `close` releases every receiver. Send
+  wakes exactly one.
+- A nil channel in a `select` case disables that case — handy for turning
+  inputs off once they're drained.
+- Only the sender should close, and only once. With several senders, close
+  after a `WaitGroup` says they're all done.
+- Ruby comparison: closest is `Queue` + `Queue#close` (Ruby 2.3+), but `pop`
+  on a closed empty Ruby `Queue` returns `nil`, not a separate `ok` flag, and
+  there is no `select` over several queues.

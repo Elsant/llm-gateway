@@ -54,7 +54,10 @@ func TestComplete_Success(t *testing.T) {
 			body: `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5",
 				"content":[{"type":"text","text":"Hello"},{"type":"text","text":", world"}],
 				"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":4}}`,
-			want: gateway.Response{Text: "Hello, world", Model: "claude-opus-5-5", StopReason: "end_turn"},
+			want: gateway.Response{
+				Text: "Hello, world", Model: "claude-opus-5-5", StopReason: "end_turn",
+				Usage: gateway.Usage{InputTokens: 3, OutputTokens: 4},
+			},
 		},
 		{
 			name: "non-text blocks are skipped",

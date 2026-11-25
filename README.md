@@ -92,6 +92,7 @@ internal/gateway/                Provider interface, Request/Response, APIError 
 internal/provider/anthropic/     Anthropic client implementing gateway.Provider
 internal/provider/anthropic/api/ Messages API wire types
 internal/provider/echo/          fake provider that echoes the prompt (tests, -provider=echo)
+internal/usage/                  per-client request and token counter, safe for concurrent use
 examples/fetchall/                learning experiment: concurrent fetch with goroutines + WaitGroup
 examples/channels/               learning experiment: nil/open/closed channel behavior as tests
 ```

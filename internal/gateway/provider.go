@@ -40,4 +40,11 @@ type Response struct {
 	Text       string // concatenated text output
 	Model      string // model that actually served the request
 	StopReason string // provider-specific value, e.g. "end_turn"
+	Usage      Usage
+}
+
+// Usage is the token count billed for one request.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
 }

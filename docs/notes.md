@@ -235,3 +235,62 @@ Takeaways:
 - Ruby comparison: closest is `Queue` + `Queue#close` (Ruby 2.3+), but `pop`
   on a closed empty Ruby `Queue` returns `nil`, not a separate `ok` flag, and
   there is no `select` over several queues.
+
+## Day 17: sync, data races, memory model
+
+### Project: `usage.Counter`
+Per-client totals of requests, input and output tokens
+(`internal/usage`). `gateway.Response` now carries `Usage` (Anthropic: from
+`usage.input_tokens/output_tokens`; echo: word count), so there is
+something to count. Wiring it into requests waits for the HTTP server and
+per-client API keys in week 4.
+
+- `sync.Mutex` + `map[string]Stats`, every method locks for its whole body
+  (`Lock(); defer Unlock()`).
+- **Zero value is usable**: the map is created lazily inside `Record`, so
+  `var c usage.Counter` works without a constructor — same as
+  `sync.Mutex`, `bytes.Buffer`.
+- **Map values are not addressable**: `c.clients[k].Requests++` does not
+  compile. Read the struct, change it, write it back — all under the lock.
+- **`Snapshot` returns `maps.Clone`**, never the internal map: once the map
+  leaves the lock, nothing protects it.
+- A struct with a `Mutex` must not be copied after use (the copy gets its
+  own, unrelated lock). `go vet` copylocks catches it; pass `*Counter`.
+- `BenchmarkCounter_RecordParallel`: ~135 ns/op on 10 cores. Fine for now;
+  if the lock ever becomes hot, shard by client or use `sync/atomic`
+  counters per client.
+
+### Race detector experiment
+Removed the `Lock/Unlock` from `Record` and ran
+`go test -race -run Concurrent ./internal/usage`:
+
+- 7 × `WARNING: DATA RACE`, each with the two conflicting stacks (who wrote,
+  who read, which goroutines);
+- then the runtime itself: `fatal error: concurrent map read and map write`.
+
+### Why racy code often "works"
+- The race detector reports races that **actually happened during this
+  run** (it instruments memory accesses and tracks happens-before between
+  goroutines). It does not prove the code is race-free; untested paths
+  stay unchecked. No false positives, but false negatives are possible.
+- Without `-race`, a racy `count++` (load, add, store) mostly gives the
+  right answer when goroutines rarely overlap: low load, one core, short
+  critical section. It fails under real concurrency — in production.
+- A data race is **undefined behaviour** in the Go memory model, not just
+  "a lost increment": the compiler and CPU may reorder or cache accesses.
+  Maps are worse — the runtime detects concurrent writes and crashes on
+  purpose.
+- Happens-before is what makes a write visible to another goroutine:
+  `Unlock` → next `Lock`, a channel send → its receive, `close` → a receive
+  that sees it, `wg.Done` → `wg.Wait` returning. No such edge = no
+  guarantee.
+
+### Mutex vs atomic vs channel
+- One integer counter: `atomic.Int64` — no lock, can't forget to unlock.
+- Several fields updated together, or a map: `Mutex` — atomics can't make
+  "requests and tokens change together" atomic.
+- Handing data from one goroutine to another: channel. "Share memory by
+  communicating" is about ownership transfer, not about counters.
+- Ruby comparison: MRI's GVL hides many races in pure Ruby code (but not
+  all — `@count += 1` across threads is still racy). Go has no such net:
+  `-race` in CI is the net, which is why tests run with `-race`.

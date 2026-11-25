@@ -3,6 +3,7 @@ package echo
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/elsant/llm-gateway/internal/gateway"
@@ -16,12 +17,13 @@ func TestComplete(t *testing.T) {
 		name     string
 		messages []gateway.Message
 		want     string
+		wantIn   int // words across all messages
 	}{
-		{"single user message", []gateway.Message{user("hi")}, "hi"},
-		{"last user message wins", []gateway.Message{user("one"), assistant("ok"), user("two")}, "two"},
-		{"skips trailing assistant", []gateway.Message{user("q"), assistant("a")}, "q"},
-		{"no user message", []gateway.Message{assistant("a")}, ""},
-		{"no messages", nil, ""},
+		{"single user message", []gateway.Message{user("hi there")}, "hi there", 2},
+		{"last user message wins", []gateway.Message{user("one"), assistant("ok sure"), user("two")}, "two", 4},
+		{"skips trailing assistant", []gateway.Message{user("q"), assistant("a")}, "q", 2},
+		{"no user message", []gateway.Message{assistant("a")}, "", 1},
+		{"no messages", nil, "", 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -29,7 +31,10 @@ func TestComplete(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			want := gateway.Response{Text: tt.want, Model: Model, StopReason: "end_turn"}
+			want := gateway.Response{
+				Text: tt.want, Model: Model, StopReason: "end_turn",
+				Usage: gateway.Usage{InputTokens: tt.wantIn, OutputTokens: len(strings.Fields(tt.want))},
+			}
 			if got != want {
 				t.Errorf("got %+v, want %+v", got, want)
 			}

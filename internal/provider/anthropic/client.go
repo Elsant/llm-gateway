@@ -138,5 +138,13 @@ func fromMessageResponse(res api.MessageResponse) gateway.Response {
 			sb.WriteString(block.Text)
 		}
 	}
-	return gateway.Response{Text: sb.String(), Model: res.Model, StopReason: res.StopReason}
+	return gateway.Response{
+		Text:       sb.String(),
+		Model:      res.Model,
+		StopReason: res.StopReason,
+		Usage: gateway.Usage{
+			InputTokens:  res.Usage.InputTokens,
+			OutputTokens: res.Usage.OutputTokens,
+		},
+	}
 }

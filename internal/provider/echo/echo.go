@@ -5,6 +5,7 @@ package echo
 
 import (
 	"context"
+	"strings"
 
 	"github.com/elsant/llm-gateway/internal/gateway"
 )
@@ -20,6 +21,9 @@ type Provider struct{}
 
 // Complete returns the text of the last user message in req, or an empty
 // text if there is none. It fails only if ctx is already done.
+//
+// Usage counts words as tokens: input is every message in req, output is
+// the echoed text. Good enough to exercise usage accounting in tests.
 func (Provider) Complete(ctx context.Context, req gateway.Request) (gateway.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return gateway.Response{}, err
@@ -31,5 +35,16 @@ func (Provider) Complete(ctx context.Context, req gateway.Request) (gateway.Resp
 			break
 		}
 	}
-	return gateway.Response{Text: text, Model: Model, StopReason: "end_turn"}, nil
+	var in int
+	for _, m := range req.Messages {
+		in += countWords(m.Text)
+	}
+	return gateway.Response{
+		Text:       text,
+		Model:      Model,
+		StopReason: "end_turn",
+		Usage:      gateway.Usage{InputTokens: in, OutputTokens: countWords(text)},
+	}, nil
 }
+
+func countWords(s string) int { return len(strings.Fields(s)) }
